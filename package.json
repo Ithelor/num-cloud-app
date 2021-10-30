@@ -1,0 +1,29 @@
+{
+  "name": "num-cloud-app",
+  "version": "1.0.0",
+  "description": "Telegram translator bot",
+  "main": "App.js",
+  "scripts": {
+    "n": "node App.js",
+    "nm": "nodemon App.js"
+  },
+  "keywords": [
+    "telegram",
+    "language",
+    "tranlsator",
+    "bot",
+    "google",
+    "cloud",
+    "api"
+  ],
+  "author": "Vladislav 'Ithelor' Dietrich",
+  "license": "ISC",
+  "dependencies": {
+    "config": "^3.3.6",
+    "node-telegram-bot-api": "^0.54.0",
+    "npmlog": "^5.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.14"
+  }
+}
