@@ -1,27 +1,27 @@
 const TelegramBot = require('node-telegram-bot-api');
-const config = require('config')
+require('dotenv').config({ path: 'config/.env' })
 
-const { initialize, dLog } = require('./Logger')
+const { logger, log } = require('./util/Logger')
+const { translate, listLanguages, detectLanguage, translateText } = require('./util/Translator')
 
-const log = initialize()
-
-const token = config.get('API_KEY')
+const token = process.env['API_KEY']
 
 const bot = new TelegramBot(token, { polling: true });
 
-bot.onText(/\/echo (.+)/, (msg, match) => {
+bot.onText(/\/translate (.+)/, (msg, match) => {
 
 	const chatId = msg.chat.id;
 	const resp = match[1];
 
-	bot.sendMessage(chatId, resp);
+	translateText(resp, 'en')
+		.then((res, err) => {
+			log('INFO', 'response', res)
+			bot.sendMessage(chatId, res);
+		})
+
 });
 
 bot.on('message', (msg) => {
-	const chatId = msg.chat.id;
-	const message = msg.text
-
-	dLog('sendMessage', message)
-
-	bot.sendMessage(chatId, 'Received your message');
+	
+	log('WARN', 'request', msg.text)
 });
