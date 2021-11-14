@@ -2,10 +2,9 @@
   "name": "num-cloud-app",
   "version": "1.0.0",
   "description": "Telegram translator bot",
-  "main": "App.js",
+  "main": "server.js",
   "scripts": {
-    "n": "node App.js",
-    "nm": "nodemon App.js"
+    "dev": "nodemon server.ts"
   },
   "keywords": [
     "telegram",
@@ -22,9 +21,14 @@
     "@google-cloud/translate": "^6.3.1",
     "dotenv": "^10.0.0",
     "node-telegram-bot-api": "^0.54.0",
-    "npmlog": "^5.0.1"
+    "npmlog": "^5.0.1",
+    "typescript": "^4.4.4"
   },
   "devDependencies": {
-    "nodemon": "^2.0.14"
+    "@types/express": "^4.17.13",
+    "@types/node": "^16.11.7",
+    "concurrently": "^6.4.0",
+    "nodemon": "^2.0.14",
+    "ts-node": "^10.4.0"
   }
 }

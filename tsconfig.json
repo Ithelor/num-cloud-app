@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "es6",
+        "module": "commonjs",
+        "removeComments": true,
+        "sourceMap": true,
+        "rootDir": ".",
+        "outDir": "./build",
+        "esModuleInterop": true,
+        "strict": true
+    },
+    "files": ["server.ts", "util/Logger.ts", "util/Translator.ts"],
+    "exclude": ["node_modules"]
+}
