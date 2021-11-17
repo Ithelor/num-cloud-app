@@ -1,42 +1,48 @@
-export {}
+import { Translate } from '@google-cloud/translate/build/src/v2'
+import dotenv from 'dotenv'
 
-const { Translate } = require("@google-cloud/translate").v2
+dotenv.config({ path: 'config/.env' })
 
-require("dotenv").config({ path: "config/.env" })
-
-const { logger, log } = require("./Logger")
-
-const CREDENTIALS = JSON.parse(process.env["CREDENTIALS"]!)
+const CREDENTIALS = JSON.parse((process.env['CREDENTIALS'] ??= ''))
 const translate = new Translate({
     credentials: CREDENTIALS,
-    projectId: CREDENTIALS.project_id,
+    projectId: CREDENTIALS.project_id
 })
-
 const listLanguages = async () => {
     const [languages] = await translate.getLanguages()
 
-    logger.silent("Languages: ")
-    languages.forEach((language: any) => logger.info(JSON.stringify(language)))
+    console.log(`Languages: `)
+    languages.forEach((language) => console.log(JSON.stringify(language)))
 }
 
-const detectLanguage = async (text: any) => {
+const detectLanguage = async (text: string) => {
     try {
-        let response = await translate.detect(text)
+        const response = await translate.detect(text)
         return response[0].language
-    } catch (error) {
-        log("ERROR", "An error occured during language detection", error)
+    } catch (err) {
+        console.log(`An error occured during language detection: ${err}`)
     }
     return
 }
 
-const translateText = async (text: any, targetLanguage: any) => {
+const translateText = async (text: string, targetLanguage: string) => {
     try {
-        let [response] = await translate.translate(text, targetLanguage)
+        const [response] = await translate.translate(text, targetLanguage)
         return response
-    } catch (error) {
-        log("ERROR", "An error occured during translation", error)
+    } catch (err) {
+        console.log(`An error occured during translation: ${err}`)
     }
     return
 }
 
-module.exports = { translate, listLanguages, detectLanguage, translateText }
+const stlDetectLanguage = async (text: string) => {
+    try {
+        const response = await translate.detect(text)
+        return response[0].language
+    } catch (err) {
+        console.log(`An error occured during language detection: ${err}`)
+    }
+    return
+}
+
+export { translate, listLanguages, detectLanguage, translateText }
