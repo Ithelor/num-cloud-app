@@ -6,8 +6,8 @@
         "sourceMap": true,
         "rootDir": ".",
         "outDir": "./build",
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
+        // "esModuleInterop": true,
+        // "allowSyntheticDefaultImports": true,
         "strict": true,
         "allowJs": true
     },

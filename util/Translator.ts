@@ -1,19 +1,12 @@
+import { LanguageResult } from '@google-cloud/translate/build/src/v2'
 import { Translate } from '@google-cloud/translate/build/src/v2'
-import dotenv from 'dotenv'
-
-dotenv.config({ path: 'config/.env' })
+require('dotenv').config({ path: 'config/.env' })
 
 const CREDENTIALS = JSON.parse((process.env['CREDENTIALS'] ??= ''))
 const translate = new Translate({
     credentials: CREDENTIALS,
     projectId: CREDENTIALS.project_id
 })
-const listLanguages = async () => {
-    const [languages] = await translate.getLanguages()
-
-    console.log(`Languages: `)
-    languages.forEach((language) => console.log(JSON.stringify(language)))
-}
 
 const detectLanguage = async (text: string) => {
     try {
@@ -35,14 +28,38 @@ const translateText = async (text: string, targetLanguage: string) => {
     return
 }
 
-const stlDetectLanguage = async (text: string) => {
-    try {
-        const response = await translate.detect(text)
-        return response[0].language
-    } catch (err) {
-        console.log(`An error occured during language detection: ${err}`)
+const listLanguages = async () => {
+    const [languages] = await translate.getLanguages()
+
+    console.log(`Languages: `)
+    languages.forEach((language) => console.log(JSON.stringify(language)))
+}
+
+// Literally the only working approach (see loop) OR/AND I'm retarded
+const getNameByCode = async (code: string) => {
+    const [languages] = await translate.getLanguages()
+    for (const language of languages) {
+        if (code.localeCompare(language.code) === 0) return language.name
     }
+
     return
 }
 
-export { translate, listLanguages, detectLanguage, translateText }
+// Same as getNameByCode()
+const getCodeByName = async (name: string) => {
+    const [languages] = await translate.getLanguages()
+    for (const language of languages) {
+        if (name.toLowerCase().localeCompare(language.name.toLowerCase()) === 0)
+            return language.code
+    }
+
+    return
+}
+
+export {
+    translate,
+    detectLanguage,
+    translateText,
+    getNameByCode,
+    getCodeByName
+}
