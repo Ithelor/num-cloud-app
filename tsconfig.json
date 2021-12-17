@@ -11,6 +11,6 @@
         "strict": true,
         "allowJs": true
     },
-    "files": ["server.ts", "util/Translator.ts"],
+    "files": ["server.ts", "util/Translator.ts", "models/Chat.ts"],
     "exclude": ["node_modules"]
 }
