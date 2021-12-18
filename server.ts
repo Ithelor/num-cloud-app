@@ -269,58 +269,82 @@ bot.onText(/\/stl$|\/stl@CloudElevenBot$/, async (msg: any) => {
 // TODO: fix double space ?
 bot.on('inline_query', async (msg) => {
 	if (msg.query) {
-		let [, lang, text] = msg.query.match(/(\w+)(.+)/) || []
+		let [, nope, lang, text] = msg.query.match(/(\w+)$|(\w+)\s(.+)/) || []
 
 		// lang:
-		// 	get name: if not => already a name or invalid,
-		//	get code: if not => 									invalid,
-		//		get name.
+		// 	get name: if not => already a name [1] or invalid,
+		//		[1] get code: if not => 				 				invalid,
+		//			get name.
 
-		if (lang && text) {
-			let title = `Translation`,
-				description = `Original`
+		console.log(msg.query.match(/(\w+)$|(\w+)\s(.+)/))
 
-			let gotNameByCode = await getNameByCode(lang),
-				gotCodeByName = await getCodeByName(lang),
-				translatedText = await translateText(text, lang),
-				detectedLanguage = await translate.detect(msg.query)
+		if (!nope) {
+			let title: string, description: string, langCode: string, langName: string
 
-			Promise.all([
-				gotNameByCode,
-				gotCodeByName,
-				translatedText,
-				detectedLanguage
-			]).then((data) => {
-				console.log(`${data}`)
+			// TODO: detect original lang
 
-				let tl = (data[0] ??= data[1]),
-					tt = data[2],
-					dl = data[3][0].language
+			let detectedLanguage = await translate.detect(msg.query),
+				gotNameByCode = await getNameByCode(lang)
 
-				if (!data[0] && !data[1]) {
-					title = `Language not recognized`
-				} else {
-					title = `Translation (${tl}): ${tt}`
-				}
+			let dLang: string
 
-				getNameByCode(dl).then((data) => {
-					let dlName = data
-					description = `Original (${dlName}): ${text}`
+			Promise.all([gotNameByCode, detectedLanguage])
+				.then((data) => {
+					if (data[0]) {
+						langName = data[0]
+						console.log(`[1] langName: ${langName}`)
+					} else {
+						console.log(`Elsed`)
+						getCodeByName(lang).then((code) => {
+							if (code) {
+								langCode = code
+								getNameByCode(code).then((name) => {
+									langName = name
+									console.log(`[2] langName: ${langName}`)
+								})
+							} else {
+								title = `Error: Invalid Query`
+								description = `Please follow the "language text" syntax`
 
-					bot.answerInlineQuery(msg.id, [
-						{
-							type: 'article',
-							id: `ID${msg.query}`,
-							title: title,
-							description: description,
+								console.log(`Errored`)
 
-							input_message_content: {
-								message_text: `(${dlName}-${tl}): ${tt}`
+								// TODO: fix
+								bot.answerInlineQuery(msg.id, [
+									{
+										type: 'article',
+										id: `ID${msg.query}`,
+										title: title,
+										description: description,
+
+										input_message_content: {
+											message_text: `(-): `
+										}
+									}
+								])
 							}
-						}
-					])
+						})
+					}
 				})
-			})
+				.then(() => {
+					translateText(text, (langCode ??= lang)).then((data) => {
+						title = `Translation (${langName}): ${data}`
+						description = `Original (${dLang}): ${text}`
+
+						// TODO: fix
+						bot.answerInlineQuery(msg.id, [
+							{
+								type: 'article',
+								id: `ID${msg.query}`,
+								title: title,
+								description: description,
+
+								input_message_content: {
+									message_text: `(-): `
+								}
+							}
+						])
+					})
+				})
 		}
 	}
 })
