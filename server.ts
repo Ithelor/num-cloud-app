@@ -3,7 +3,12 @@ process.env.NTBA_FIX_319 = '1'
 import TelegramBot = require('node-telegram-bot-api')
 import mongoose = require('mongoose')
 
-import { getCodeByName, getNameByCode, translateText } from './util/Translator'
+import {
+	getCodeByName,
+	getNameByCode,
+	translate,
+	translateText
+} from './util/Translator'
 import { SendMessageOptions } from 'node-telegram-bot-api'
 import ChatSchema = require('./models/Chat')
 
@@ -261,49 +266,60 @@ bot.onText(/\/stl$|\/stl@CloudElevenBot$/, async (msg: any) => {
 })
 
 // Handling inlines
-
+// TODO: fix double space ?
 bot.on('inline_query', async (msg) => {
 	if (msg.query) {
-		// let query = encodeURIComponent(msg.query.trim())
-		let query = msg.query
-		let re = /(\w+)(.+)/
+		let [, lang, text] = msg.query.match(/(\w+)(.+)/) || []
 
-		// const [lang, text] = re.exec(query) || []
-		let [message, lang, text] = query.match(re) || []
+		// lang:
+		// 	get name: if not => already a name or invalid,
+		//	get code: if not => 									invalid,
+		//		get name.
 
 		if (lang && text) {
-			console.log(`(${query}): ${lang} / ${text}`)
-
 			let title = `Translation`,
 				description = `Original`
 
-			const gotNameByCode = await getNameByCode(lang),
-				gotCodeByName = await getCodeByName(lang)
+			let gotNameByCode = await getNameByCode(lang),
+				gotCodeByName = await getCodeByName(lang),
+				translatedText = await translateText(text, lang),
+				detectedLanguage = await translate.detect(msg.query)
 
-			Promise.all([gotNameByCode, gotCodeByName]).then((data) => {
+			Promise.all([
+				gotNameByCode,
+				gotCodeByName,
+				translatedText,
+				detectedLanguage
+			]).then((data) => {
+				console.log(`${data}`)
+
+				let tl = (data[0] ??= data[1]),
+					tt = data[2],
+					dl = data[3][0].language
+
 				if (!data[0] && !data[1]) {
 					title = `Language not recognized`
 				} else {
-					let langName = (data[0] ??= data[1])
-					lang = data[1] ??= lang
+					title = `Translation (${tl}): ${tt}`
+				}
 
-					translateText(text, lang).then((res) => {
-						title = `Translation (${langName}): ${res}`
-					})
+				getNameByCode(dl).then((data) => {
+					let dlName = data
+					description = `Original (${dlName}): ${text}`
 
 					bot.answerInlineQuery(msg.id, [
 						{
 							type: 'article',
-							id: `ID${query}`,
+							id: `ID${msg.query}`,
 							title: title,
-							description: `Original (${langName}): ${text}`,
+							description: description,
 
 							input_message_content: {
-								message_text: query
+								message_text: `(${dlName}-${tl}): ${tt}`
 							}
 						}
 					])
-				}
+				})
 			})
 		}
 	}
