@@ -14,7 +14,7 @@ const translateText = async (text: string, targetLanguage: string) => {
 	try {
 		;[result] = await translate.translate(text, targetLanguage)
 	} catch (err) {
-		result = `Error: Invalid Language`
+		result = `Error: Invalid Target Language`
 	}
 
 	return result

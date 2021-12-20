@@ -22,7 +22,7 @@ try {
 	mongoose
 		.connect(MONGO_URI)
 		.then(() => {
-			console.log(`MongoDB connected`)
+			console.log(`Database connected`)
 		})
 		.catch((err) => {
 			console.error(err)
@@ -76,13 +76,14 @@ bot.onText(/\/t\s(.+)|\/t@CloudElevenBot\s(.+)/, (msg: any, match: any) => {
 	ChatSchema.findOne({ id: msg.chat.id }).then(
 		(data: { settings: { stl: string } }) => {
 			translateText(resp, data.settings.stl || 'en').then((res) => {
-				return bot.sendMessage(msg.chat.id, (res ??= ''), params)
+				return bot.sendMessage(msg.chat.id, res, params)
 			})
 		}
 	)
 })
 
 //	Handling /tl -language- -text-
+// TODO: fix no reply
 bot.onText(
 	/\/tl\s([A-Za-z]+)\s(.+)|\/tl@CloudElevenBot\s([A-Za-z]+)\s(.+)/,
 	async (msg: any, match: any) => {
@@ -266,71 +267,65 @@ bot.onText(/\/stl$|\/stl@CloudElevenBot$/, async (msg: any) => {
 })
 
 // Handling inlines
-// TODO: fix double space ?
 bot.on('inline_query', async (msg) => {
 	if (msg.query) {
 		let [, nope, lang, text] = msg.query.match(/(\w+)$|(\w+)\s(.+)/) || []
+		let title: string, description: string, message_text: string
 
 		// lang:
 		// 	get name: if not => already a name [1] or invalid,
-		//		[1] get code: if not => 				 				invalid,
+		//		[1] get code: if not => invalid,
 		//			get name.
 
-		console.log(msg.query.match(/(\w+)$|(\w+)\s(.+)/))
+		if (nope) {
+			title = `Error: Expected 2 arguments`
+			description = `Please follow the "language text" syntax`
+			message_text = `${title}\n${description}`
 
-		if (!nope) {
-			let title: string, description: string, langCode: string, langName: string
+			bot.answerInlineQuery(msg.id, [
+				{
+					type: 'article',
+					id: `ID${msg.query}`,
+					title: title,
+					description: description,
 
-			// TODO: detect original lang
+					input_message_content: {
+						message_text: message_text
+					}
+				}
+			])
+		} else {
+			let langCode: string, langName: string
 
-			let detectedLanguage = await translate.detect(msg.query),
+			let [detectedLanguage] = await translate.detect(msg.query),
+				detectedLanguageName = await getNameByCode(detectedLanguage.language),
 				gotNameByCode = await getNameByCode(lang)
-
-			let dLang: string
 
 			Promise.all([gotNameByCode, detectedLanguage])
 				.then((data) => {
 					if (data[0]) {
+						langCode = lang
 						langName = data[0]
-						console.log(`[1] langName: ${langName}`)
 					} else {
-						console.log(`Elsed`)
 						getCodeByName(lang).then((code) => {
 							if (code) {
 								langCode = code
 								getNameByCode(code).then((name) => {
 									langName = name
-									console.log(`[2] langName: ${langName}`)
 								})
 							} else {
-								title = `Error: Invalid Query`
+								title = `Error: Invalid Target Language`
 								description = `Please follow the "language text" syntax`
-
-								console.log(`Errored`)
-
-								// TODO: fix
-								bot.answerInlineQuery(msg.id, [
-									{
-										type: 'article',
-										id: `ID${msg.query}`,
-										title: title,
-										description: description,
-
-										input_message_content: {
-											message_text: `(-): `
-										}
-									}
-								])
 							}
 						})
 					}
 				})
 				.then(() => {
-					translateText(text, (langCode ??= lang)).then((data) => {
-						title = `Translation (${langName}): ${data}`
-						description = `Original (${dLang}): ${text}`
+					translateText(text, langCode).then((data) => {
+						title ??= `Translation (${langName}): ${data}`
+						description ??= `Original (${detectedLanguageName}): ${text}`
+						message_text = `${title}\n${description}`
 
-						// TODO: fix
 						bot.answerInlineQuery(msg.id, [
 							{
 								type: 'article',
@@ -339,7 +334,7 @@ bot.on('inline_query', async (msg) => {
 								description: description,
 
 								input_message_content: {
-									message_text: `(-): `
+									message_text: message_text
 								}
 							}
 						])
