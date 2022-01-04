@@ -19,7 +19,10 @@
   "author": "Vladislav 'Ithelor' Dietrich",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/speech": "^4.9.0",
+    "@google-cloud/storage": "^5.16.1",
     "@google-cloud/translate": "^6.3.1",
+    "axios": "^0.24.0",
     "dotenv": "^10.0.0",
     "mongoose": "^6.0.13",
     "node-telegram-bot-api": "^0.54.0",

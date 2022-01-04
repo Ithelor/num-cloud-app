@@ -1,345 +1,365 @@
 process.env.NTBA_FIX_319 = '1'
 
-import TelegramBot = require('node-telegram-bot-api')
-import mongoose = require('mongoose')
+require('dotenv').config({
+  path: 'config/.env'
+})
+
+import TelegramBot, { SendMessageOptions } from 'node-telegram-bot-api'
+import mongoose from 'mongoose'
 
 import {
-	getCodeByName,
-	getNameByCode,
-	translate,
-	translateText
+  getCodeByName,
+  getNameByCode,
+  translate,
+  translateText
 } from './util/Translator'
-import { SendMessageOptions } from 'node-telegram-bot-api'
-import ChatSchema = require('./models/Chat')
+import { uploadFile, deleteFile, waitUntilExists } from './util/Storage'
+import speechToText from './util/SpeechToText'
 
-require('dotenv').config({
-	path: 'config/.env'
-})
+import ChatSchema from './models/Chat'
 
-const MONGO_URI = process.env['MONGO_URI']!
+const MONGO_URI = process.env.MONGO_URI!
 
 try {
-	mongoose
-		.connect(MONGO_URI)
-		.then(() => {
-			console.log(`Database connected`)
-		})
-		.catch((err) => {
-			console.error(err)
-		})
+  mongoose
+    .connect(MONGO_URI)
+    .then(() => {
+      console.log(`Database connected`)
+    })
+    .catch((err) => {
+      console.error(err)
+    })
 } catch (err) {
-	console.log(`Database connection error: ${err}. Shutting down..`)
-	process.exit(1)
+  console.log(`Database connection error: ${err}. Shutting down..`)
+  process.exit(1)
 }
 
-const token = process.env['API_KEY']
+const token = process.env.API_KEY
 const bot = new TelegramBot(token!, { polling: true })
 
+// Default logging
 bot.on('message', (msg) => {
-	console.log(msg.text)
+  console.log(msg.text)
 })
 
-//	Handling /start
-bot.onText(/\/start/, (msg: TelegramBot.Message) => {
-	const params = { reply_to_message_id: msg.message_id }
-	const Chat = new ChatSchema({ id: msg.chat.id, contactedAt: Date.now() })
-
-	ChatSchema.findOne({ id: msg.chat.id }, (err: any, data: any) => {
-		if (err) {
-			console.log(`An error occured: ${err}`)
-		} else {
-			if (data) {
-				bot.sendMessage(
-					msg.chat.id,
-					`This chat has already been initialized - @${msg.from!.username}`,
-					params
-				)
-			} else {
-				Chat.save((err: never) => {
-					if (err) {
-						return console.log(`An error occured while saving a model: ${err}`)
-					}
-				})
-				bot.sendMessage(msg.chat.id, `Initialized succesfully`, params)
-			}
-		}
-	})
+// Handling audio
+// TODO: idk like actual translation maybe?
+bot.on('voice', async (msg: TelegramBot.Message) => {
+  console.log(msg)
+  await bot.getFileLink(msg.voice!.file_id).then(async (url) => {
+    // TEMPORAL upload to Google Cloud Storage
+    // seriously like for 5 seconds 🙄
+    const path = `audio-files/${String(msg.from!.id)}/${msg.voice!.file_id}.ogg`
+    uploadFile(url, path).then(() => {
+      bot.sendMessage(
+        msg.chat.id,
+        `@${msg.from!.username}, file uploaded, starting transcription`
+      )
+      waitUntilExists(path).then(() => {
+        speechToText(path).then((data) => {
+          bot.sendMessage(msg.chat.id, `${data}`)
+          deleteFile(path)
+        })
+      })
+    })
+  })
 })
 
-//	Handling /t -text-
+// Handling /start
+bot.onText(/\/start/, async (msg: TelegramBot.Message) => {
+  const params = { reply_to_message_id: msg.message_id }
+  const Chat = new ChatSchema({ id: msg.chat.id, contactedAt: Date.now() })
+
+  ChatSchema.findOne({ id: msg.chat.id }, (err: any, data: any) => {
+    if (err) {
+      console.log(`An error occured: ${err}`)
+    } else {
+      if (data) {
+        bot.sendMessage(
+          msg.chat.id,
+          `This chat has already been initialized - @${msg.from!.username}`,
+          params
+        )
+      } else {
+        Chat.save((err: never) => {
+          if (err) {
+            return console.log(`An error occured while saving a model: ${err}`)
+          }
+        })
+        bot.sendMessage(msg.chat.id, `Initialized succesfully`, params)
+      }
+    }
+  })
+})
+
+// Handling /t -text-
 bot.onText(/\/t\s(.+)|\/t@CloudElevenBot\s(.+)/, (msg: any, match: any) => {
-	const params = {
-		reply_to_message_id: msg.message_id
-	}
-	const resp: string = match?.[1] || match?.[2]
+  const params = {
+    reply_to_message_id: msg.message_id
+  }
+  const resp: string = match?.[1] || match?.[2]
 
-	ChatSchema.findOne({ id: msg.chat.id }).then(
-		(data: { settings: { stl: string } }) => {
-			translateText(resp, data.settings.stl || 'en').then((res) => {
-				return bot.sendMessage(msg.chat.id, res, params)
-			})
-		}
-	)
+  ChatSchema.findOne({ id: msg.chat.id }).then(
+    (data: { settings: { stl: string } }) => {
+      translateText(resp, data.settings.stl || 'en').then((res) => {
+        return bot.sendMessage(msg.chat.id, res, params)
+      })
+    }
+  )
 })
 
-//	Handling /tl -language- -text-
+// Handling /tl -language- -text-
 // TODO: fix no reply
 bot.onText(
-	/\/tl\s([A-Za-z]+)\s(.+)|\/tl@CloudElevenBot\s([A-Za-z]+)\s(.+)/,
-	async (msg: any, match: any) => {
-		const params = { reply_to_message_id: msg.message_id }
-		let lang: string = match?.[1] || match?.[3]
-		let resp: string = match?.[2] || match?.[4]
+  /\/tl\s([A-Za-z]+)\s(.+)|\/tl@CloudElevenBot\s([A-Za-z]+)\s(.+)/,
+  async (msg: any, match: any) => {
+    const params = { reply_to_message_id: msg.message_id }
+    let lang: string = match?.[1] || match?.[3]
+    let resp: string = match?.[2] || match?.[4]
 
-		const gotNameByCode = await getNameByCode(lang),
-			gotCodeByName = await getCodeByName(lang)
+    const gotNameByCode = await getNameByCode(lang),
+      gotCodeByName = await getCodeByName(lang)
 
-		Promise.all([gotNameByCode, gotCodeByName]).then((data) => {
-			if (!data[0] && !data[1]) {
-				return bot.sendMessage(
-					msg.chat.id,
-					`Language not recognized. Please try again`,
-					params
-				)
-			}
+    Promise.all([gotNameByCode, gotCodeByName]).then((data) => {
+      if (!data[0] && !data[1]) {
+        return bot.sendMessage(
+          msg.chat.id,
+          `Language not recognized. Please try again`,
+          params
+        )
+      }
 
-			lang = data[1] ??= lang
+      lang = data[1] ??= lang
 
-			translateText(resp, lang).then((res) => {
-				bot.sendMessage(msg.chat.id, (res ??= ''))
-			})
-		})
-	}
+      translateText(resp, lang).then((res) => {
+        bot.sendMessage(msg.chat.id, (res ??= ''))
+      })
+    })
+  }
 )
 
-//	Handling /stl -lang-
+// Handling /stl -lang-
 bot.onText(/\/stl (.+)/, async (msg: any, match: any) => {
-	const params = {
-		reply_to_message_id: msg.message_id,
-		parse_mode: 'HTML' as TelegramBot.ParseMode
-	}
-	let lang: string = match?.[1]!
-	let langName: string = match?.[1]!
+  const params = {
+    reply_to_message_id: msg.message_id,
+    parse_mode: 'HTML' as TelegramBot.ParseMode
+  }
+  let lang: string = match?.[1]!
+  let langName: string = match?.[1]!
 
-	let gotNameByCode = await getNameByCode(lang),
-		gotCodeByName = await getCodeByName(lang)
+  let gotNameByCode = await getNameByCode(lang),
+    gotCodeByName = await getCodeByName(lang)
 
-	Promise.all([gotNameByCode, gotCodeByName]).then((data) => {
-		if (!data[0] && !data[1]) {
-			return bot.sendMessage(
-				msg.chat.id,
-				`Language not recognized. Please try again`,
-				params
-			)
-		}
+  Promise.all([gotNameByCode, gotCodeByName]).then((data) => {
+    if (!data[0] && !data[1]) {
+      return bot.sendMessage(
+        msg.chat.id,
+        `Language not recognized. Please try again`,
+        params
+      )
+    }
 
-		lang = gotCodeByName ??= lang
-		langName = gotNameByCode ??=
-			langName.charAt(0).toUpperCase() + langName.slice(1)
+    lang = gotCodeByName ??= lang
+    langName = gotNameByCode ??= langName.charAt(0).toUpperCase() + langName.slice(1)
 
-		ChatSchema.findOne(
-			{ id: msg.chat.id },
-			(err: any, res: { settings: { stl: string } }) => {
-				if (lang.localeCompare(res.settings.stl) === 0) {
-					return bot.sendMessage(
-						msg.chat.id,
-						`<b><i>${langName}</i></b> already set as a target language`,
-						params
-					)
-				}
-				ChatSchema.updateOne(
-					{ id: msg.chat.id },
-					{ settings: { stl: lang } },
-					{ upsert: true }
-				)
-					.then(() => {
-						return bot.sendMessage(
-							msg.chat.id,
-							`<b><i>${langName}</i></b> set as a target language`,
-							params
-						)
-					})
-					.catch((err: any) => {
-						console.log(`An error occured while updating a model: ${err}`)
-					})
-			}
-		)
-	})
+    ChatSchema.findOne(
+      { id: msg.chat.id },
+      (err: any, res: { settings: { stl: string } }) => {
+        if (lang.localeCompare(res.settings.stl) === 0) {
+          return bot.sendMessage(
+            msg.chat.id,
+            `<b><i>${langName}</i></b> already set as a target language`,
+            params
+          )
+        }
+        ChatSchema.updateOne(
+          { id: msg.chat.id },
+          { settings: { stl: lang } },
+          { upsert: true }
+        )
+          .then(() => {
+            return bot.sendMessage(
+              msg.chat.id,
+              `<b><i>${langName}</i></b> set as a target language`,
+              params
+            )
+          })
+          .catch((err: any) => {
+            console.log(`An error occured while updating a model: ${err}`)
+          })
+      }
+    )
+  })
 })
 
 //	Handling /status
 bot.onText(/\/status/, async (msg: any, match: any) => {
-	const params = {
-		reply_to_message_id: msg.message_id
-	}
+  const params = {
+    reply_to_message_id: msg.message_id
+  }
 
-	ChatSchema.findOne(
-		{ id: msg.chat.id },
-		(err: any, res: { settings: { stl: string; spc: boolean } }) => {
-			let mes: string
-			getNameByCode(res.settings.stl).then((data) => {
-				if (!err)
-					mes = `Current target language: ${data}\nauto: ${res.settings.spc}`
-				else mes = `Unable to fetch chat settings`
+  ChatSchema.findOne(
+    { id: msg.chat.id },
+    (err: any, res: { settings: { stl: string; spc: boolean } }) => {
+      let mes: string
+      getNameByCode(res.settings.stl).then((data) => {
+        if (!err) mes = `Current target language: ${data}\nauto: ${res.settings.spc}`
+        else mes = `Unable to fetch chat settings`
 
-				bot.sendMessage(msg.chat.id, mes, params)
-			})
-		}
-	)
+        bot.sendMessage(msg.chat.id, mes, params)
+      })
+    }
+  )
 })
 
 //	Handling /t
 bot.onText(/\/t$|\/t@CloudElevenBot$/, async (msg: any) => {
-	const params = {
-		reply_to_message_id: msg.message_id
-	}
-	let resp: string, lang: string, opts: SendMessageOptions
+  const params = {
+    reply_to_message_id: msg.message_id
+  }
+  let resp: string, lang: string, opts: SendMessageOptions
 
-	if (msg.reply_to_message) {
-		ChatSchema.findOne({ id: msg.chat.id }).then(
-			(data: { settings: { stl: string } }) => {
-				lang = data.settings.stl
-				resp = msg.reply_to_message.text
+  if (msg.reply_to_message) {
+    ChatSchema.findOne({ id: msg.chat.id }).then(
+      (data: { settings: { stl: string } }) => {
+        lang = data.settings.stl
+        resp = msg.reply_to_message.text
 
-				translateText(resp, lang || 'en').then((res) => {
-					return bot.sendMessage(msg.chat.id, (res ??= ''), params)
-				})
-			}
-		)
-	} else {
-		return bot.sendMessage(
-			msg.chat.id,
-			`Please specify text or reply to a message`,
-			params
-		)
-	}
+        translateText(resp, lang || 'en').then((res) => {
+          return bot.sendMessage(msg.chat.id, (res ??= ''), params)
+        })
+      }
+    )
+  } else {
+    return bot.sendMessage(
+      msg.chat.id,
+      `Please specify text or reply to a message`,
+      params
+    )
+  }
 })
 
 /* Handling alternative queries */
 
-//	Handling /tl
+// Handling /tl
 bot.onText(/\/tl$|\/tl@CloudElevenBot$/, async (msg: any) => {
-	const params = {
-		reply_to_message_id: msg.message_id
-	}
+  const params = {
+    reply_to_message_id: msg.message_id
+  }
 
-	bot.sendMessage(
-		msg.chat.id,
-		`Please specify target language and text`,
-		params
-	)
+  bot.sendMessage(msg.chat.id, `Please specify target language and text`, params)
 })
 
 // TODO: two-way lang check
-//	Handling /tl -lang-
+// Handling /tl -lang-
 bot.onText(
-	/\/tl ([A-Za-z]+)$|\/tl@CloudElevenBot ([A-Za-z]+)$/,
-	async (msg: any, match: any) => {
-		const params: SendMessageOptions = {
-			reply_to_message_id: msg.message_id
-		}
+  /\/tl ([A-Za-z]+)$|\/tl@CloudElevenBot ([A-Za-z]+)$/,
+  async (msg: any, match: any) => {
+    const params: SendMessageOptions = {
+      reply_to_message_id: msg.message_id
+    }
 
-		let resp: string
-		const lang: string = match?.[1] || match?.[2]
+    let resp: string
+    const lang: string = match?.[1] || match?.[2]
 
-		if (msg.reply_to_message) {
-			resp = msg.reply_to_message.text
+    if (msg.reply_to_message) {
+      resp = msg.reply_to_message.text
 
-			translateText(resp, lang!).then((res) => {
-				return bot.sendMessage(msg.chat.id, res, params)
-			})
-		} else {
-			bot.sendMessage(
-				msg.chat.id,
-				`Please specify text or reply to a message`,
-				params
-			)
-		}
-	}
+      translateText(resp, lang!).then((res) => {
+        return bot.sendMessage(msg.chat.id, res, params)
+      })
+    } else {
+      bot.sendMessage(
+        msg.chat.id,
+        `Please specify text or reply to a message`,
+        params
+      )
+    }
+  }
 )
 
-//	Handling /stl
+// Handling /stl
 bot.onText(/\/stl$|\/stl@CloudElevenBot$/, async (msg: any) => {
-	const params = {
-		reply_to_message_id: msg.message_id
-	}
-	bot.sendMessage(msg.chat.id, `Please specify target language`, params)
+  const params = {
+    reply_to_message_id: msg.message_id
+  }
+  bot.sendMessage(msg.chat.id, `Please specify target language`, params)
 })
 
 // Handling inlines
 bot.on('inline_query', async (msg) => {
-	if (msg.query) {
-		let [, nope, lang, text] = msg.query.match(/(\w+)$|(\w+)\s(.+)/) || []
-		let title: string, description: string, message_text: string
+  if (msg.query) {
+    let [, nope, lang, text] = msg.query.match(/(\w+)$|(\w+)\s(.+)/) || []
+    let title: string, description: string, message_text: string
 
-		// lang:
-		// 	get name: if not => already a name [1] or invalid,
-		//		[1] get code: if not => invalid,
-		//			get name.
+    // lang:
+    // 	get name: if not => already a name [1] or invalid,
+    //		[1] get code: if not => invalid,
+    //			get name.
 
-		if (nope) {
-			title = `Error: Expected 2 arguments`
-			description = `Please follow the "language text" syntax`
-			message_text = `${title}\n${description}`
+    if (nope) {
+      title = `Error: Expected 2 arguments`
+      description = `Please follow the "language text" syntax`
+      message_text = `${title}\n${description}`
 
-			bot.answerInlineQuery(msg.id, [
-				{
-					type: 'article',
-					id: `ID${msg.query}`,
-					title: title,
-					description: description,
+      bot.answerInlineQuery(msg.id, [
+        {
+          type: 'article',
+          id: `ID${msg.query}`,
+          title: title,
+          description: description,
 
-					input_message_content: {
-						message_text: message_text
-					}
-				}
-			])
-		} else {
-			let langCode: string, langName: string
+          input_message_content: {
+            message_text: message_text
+          }
+        }
+      ])
+    } else {
+      let langCode: string, langName: string
 
-			let [detectedLanguage] = await translate.detect(msg.query),
-				detectedLanguageName = await getNameByCode(detectedLanguage.language),
-				gotNameByCode = await getNameByCode(lang)
+      let [detectedLanguage] = await translate.detect(msg.query),
+        detectedLanguageName = await getNameByCode(detectedLanguage.language),
+        gotNameByCode = await getNameByCode(lang)
 
-			Promise.all([gotNameByCode, detectedLanguage])
-				.then((data) => {
-					if (data[0]) {
-						langCode = lang
-						langName = data[0]
-					} else {
-						getCodeByName(lang).then((code) => {
-							if (code) {
-								langCode = code
-								getNameByCode(code).then((name) => {
-									langName = name
-								})
-							} else {
-								title = `Error: Invalid Target Language`
-								description = `Please follow the "language text" syntax`
-							}
-						})
-					}
-				})
-				.then(() => {
-					translateText(text, langCode).then((data) => {
-						title ??= `Translation (${langName}): ${data}`
-						description ??= `Original (${detectedLanguageName}): ${text}`
-						message_text = `${title}\n${description}`
+      Promise.all([gotNameByCode, detectedLanguage])
+        .then((data) => {
+          if (data[0]) {
+            langCode = lang
+            langName = data[0]
+          } else {
+            getCodeByName(lang).then((code) => {
+              if (code) {
+                langCode = code
+                getNameByCode(code).then((name) => {
+                  langName = name
+                })
+              } else {
+                title = `Error: Invalid Target Language`
+                description = `Please follow the "language text" syntax`
+              }
+            })
+          }
+        })
+        .then(() => {
+          translateText(text, langCode).then((data) => {
+            title ??= `Translation (${langName}): ${data}`
+            description ??= `Original (${detectedLanguageName}): ${text}`
+            message_text = `${title}\n${description}`
 
-						bot.answerInlineQuery(msg.id, [
-							{
-								type: 'article',
-								id: `ID${msg.query}`,
-								title: title,
-								description: description,
+            bot.answerInlineQuery(msg.id, [
+              {
+                type: 'article',
+                id: `ID${msg.query}`,
+                title: title,
+                description: description,
 
-								input_message_content: {
-									message_text: message_text
-								}
-							}
-						])
-					})
-				})
-		}
-	}
+                input_message_content: {
+                  message_text: message_text
+                }
+              }
+            ])
+          })
+        })
+    }
+  }
 })
