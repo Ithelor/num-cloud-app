@@ -13,7 +13,7 @@ import {
   translate,
   translateText
 } from './util/Translator'
-import { uploadFile, deleteFile, waitUntilExists } from './util/Storage'
+import { uploadObject, deleteObject, waitUntilExists } from './util/Storage'
 import speechToText from './util/SpeechToText'
 
 import ChatSchema from './models/Chat'
@@ -36,34 +36,6 @@ try {
 
 const token = process.env.API_KEY
 const bot = new TelegramBot(token!, { polling: true })
-
-// Default logging
-bot.on('message', (msg) => {
-  console.log(msg.text)
-})
-
-// Handling audio
-// TODO: idk like actual translation maybe?
-bot.on('voice', async (msg: TelegramBot.Message) => {
-  console.log(msg)
-  await bot.getFileLink(msg.voice!.file_id).then(async (url) => {
-    // TEMPORAL upload to Google Cloud Storage
-    // seriously like for 5 seconds 🙄
-    const path = `audio-files/${String(msg.from!.id)}/${msg.voice!.file_id}.ogg`
-    uploadFile(url, path).then(() => {
-      bot.sendMessage(
-        msg.chat.id,
-        `@${msg.from!.username}, file uploaded, starting transcription`
-      )
-      waitUntilExists(path).then(() => {
-        speechToText(path).then((data) => {
-          bot.sendMessage(msg.chat.id, `${data}`)
-          deleteFile(path)
-        })
-      })
-    })
-  })
-})
 
 // Handling /start
 bot.onText(/\/start/, async (msg: TelegramBot.Message) => {
@@ -132,7 +104,7 @@ bot.onText(
       lang = data[1] ??= lang
 
       translateText(resp, lang).then((res) => {
-        bot.sendMessage(msg.chat.id, (res ??= ''))
+        bot.sendMessage(msg.chat.id, res)
       })
     })
   }
@@ -239,7 +211,9 @@ bot.onText(/\/t$|\/t@CloudElevenBot$/, async (msg: any) => {
   }
 })
 
-/* Handling alternative queries */
+/*
+  Handling alternative / incorrect queries
+*/
 
 // Handling /tl
 bot.onText(/\/tl$|\/tl@CloudElevenBot$/, async (msg: any) => {
@@ -250,7 +224,6 @@ bot.onText(/\/tl$|\/tl@CloudElevenBot$/, async (msg: any) => {
   bot.sendMessage(msg.chat.id, `Please specify target language and text`, params)
 })
 
-// TODO: two-way lang check
 // Handling /tl -lang-
 bot.onText(
   /\/tl ([A-Za-z]+)$|\/tl@CloudElevenBot ([A-Za-z]+)$/,
@@ -260,21 +233,84 @@ bot.onText(
     }
 
     let resp: string
-    const lang: string = match?.[1] || match?.[2]
 
-    if (msg.reply_to_message) {
-      resp = msg.reply_to_message.text
+    let lang: string = match?.[1]!
+    let langName: string = match?.[1]!
 
-      translateText(resp, lang!).then((res) => {
-        return bot.sendMessage(msg.chat.id, res, params)
-      })
-    } else {
-      bot.sendMessage(
-        msg.chat.id,
-        `Please specify text or reply to a message`,
-        params
-      )
-    }
+    let gotNameByCode = await getNameByCode(lang),
+      gotCodeByName = await getCodeByName(lang)
+
+    Promise.all([gotNameByCode, gotCodeByName]).then(async (data) => {
+      if (!data[0] && !data[1]) {
+        return bot.sendMessage(
+          msg.chat.id,
+          `Language not recognized. Please try again`,
+          params
+        )
+      }
+
+      lang = gotCodeByName ??= lang
+      langName = gotNameByCode ??=
+        langName.charAt(0).toUpperCase() + langName.slice(1)
+
+      if (msg.reply_to_message) {
+        if (msg.reply_to_message.voice) {
+          console.log(msg)
+          await bot
+            .getFileLink(msg.reply_to_message.voice!.file_id)
+            .then(async (url) => {
+              // TEMPORAL upload to Google Cloud Storage
+              // seriously like for 5 seconds 🙄
+              const path = `audio-files/${String(msg.from!.id)}/${
+                msg.reply_to_message.voice!.file_id
+              }.ogg`
+              uploadObject(url, path).then(() => {
+                bot
+                  .sendMessage(
+                    msg.chat.id,
+                    `Audio uploaded, running transcription`,
+                    {
+                      reply_to_message_id: msg.reply_to_message.message_id
+                    }
+                  )
+                  .then((msgData) => {
+                    waitUntilExists(path).then(() => {
+                      speechToText(path).then((stt_data) => {
+                        bot.editMessageText(
+                          `Audio transcripted, running translation`,
+                          {
+                            chat_id: msgData.chat.id,
+                            message_id: msgData.message_id
+                          }
+                        )
+                        translateText(String(stt_data), lang).then((res) => {
+                          // return bot.sendMessage(msg.chat.id, res, params)
+                          return bot.editMessageText(res, {
+                            chat_id: msgData.chat.id,
+                            message_id: msgData.message_id
+                          })
+                        })
+                        deleteObject(path)
+                      })
+                    })
+                  })
+              })
+            })
+        } else {
+          resp = msg.reply_to_message.text
+
+          translateText(resp, lang!).then((res) => {
+            return bot.sendMessage(msg.chat.id, res, params)
+          })
+        }
+      } else {
+        bot.sendMessage(
+          msg.chat.id,
+          `Please specify text or reply to a message`,
+          params
+        )
+      }
+    })
   }
 )
 

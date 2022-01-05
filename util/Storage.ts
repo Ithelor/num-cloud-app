@@ -5,7 +5,7 @@ require('dotenv').config({
 import { File, Storage } from '@google-cloud/storage'
 import axios from 'axios'
 
-const uploadFile = async (url: string, path: string) => {
+const uploadObject = async (url: string, path: string) => {
   const writeStream = new Storage()
     .bucket(process.env.BUCKET_NAME!)
     .file(path)
@@ -15,7 +15,7 @@ const uploadFile = async (url: string, path: string) => {
   stream.data.unpipe
 }
 
-const deleteFile = async (path: string) => {
+const deleteObject = async (path: string) => {
   new Storage().bucket(process.env.BUCKET_NAME!).file(path).delete()
 }
 
@@ -38,4 +38,4 @@ const waitUntilExists = async (path: string) => {
   })
 }
 
-export { uploadFile, deleteFile, waitUntilExists }
+export { uploadObject, deleteObject, waitUntilExists }
