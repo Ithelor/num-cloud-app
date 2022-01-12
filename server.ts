@@ -5,7 +5,7 @@ require('dotenv').config({
 })
 
 import TelegramBot, { SendMessageOptions } from 'node-telegram-bot-api'
-import mongoose from 'mongoose'
+import mongoose, { Mongoose } from 'mongoose'
 
 import {
   getCodeByName,
@@ -17,6 +17,7 @@ import { uploadObject, deleteObject, waitUntilExists } from './util/Storage'
 import speechToText from './util/SpeechToText'
 
 import ChatSchema from './models/Chat'
+import UserSchema from './models/User'
 
 const MONGO_URI = process.env.MONGO_URI!
 
@@ -211,6 +212,82 @@ bot.onText(/\/t$|\/t@CloudElevenBot$/, async (msg: any) => {
   }
 })
 
+// Handling /subscribe
+bot.onText(/\/subscribe/, async (msg: TelegramBot.Message) => {
+  const params = {
+    reply_to_message_id: msg.message_id,
+    reply_markup: {
+      inline_keyboard: [
+        [
+          {
+            text: 'Proceed to checkout',
+            callback_data: 'sub'
+          }
+        ]
+      ]
+    }
+  }
+
+  bot.sendMessage(
+    msg.chat.id,
+    `Generated @${
+      msg.from!.username
+    }'s unique checkout link.\nIf you indend to proceed, use the button below.`,
+    params
+  )
+})
+
+// Handling callback queries
+bot.on('callback_query', (callbackQuery) => {
+  if (callbackQuery.data === 'sub') {
+    const msg = callbackQuery.message
+
+    bot.answerCallbackQuery(callbackQuery.id).then(() => {
+      console.log(msg!)
+
+      const expires = new Date(
+        new Date().getFullYear(),
+        new Date().getMonth() + 1,
+        new Date().getDate()
+      ).toDateString()
+      let newExpires: string
+
+      UserSchema.findOne(
+        { id: msg!.reply_to_message!.from!.id },
+        (err: any, data: any) => {
+          if (data) {
+            newExpires = new Date(
+              data.until.setMonth(data.until.getMonth() + 1)
+            ).toDateString()
+          }
+          UserSchema.findOneAndUpdate(
+            { id: msg!.reply_to_message!.from!.id },
+            { until: newExpires ?? expires },
+            { upsert: true, new: true, setDefaultsOnInsert: true },
+            (err) => {
+              if (err) {
+                return console.log(`An error occured while saving a model: ${err}`)
+              } else {
+                bot.editMessageText(
+                  `@${
+                    msg!.reply_to_message!.from!.username
+                  } subscribed succesfully. Expiration date - ${
+                    newExpires ?? expires
+                  }`,
+                  {
+                    chat_id: msg!.chat.id,
+                    message_id: msg!.message_id
+                  }
+                )
+              }
+            }
+          )
+        }
+      )
+    })
+  }
+})
+
 /*
   Handling alternative / incorrect queries
 */
@@ -228,7 +305,7 @@ bot.onText(/\/tl$|\/tl@CloudElevenBot$/, async (msg: any) => {
 bot.onText(
   /\/tl ([A-Za-z]+)$|\/tl@CloudElevenBot ([A-Za-z]+)$/,
   async (msg: any, match: any) => {
-    const params: SendMessageOptions = {
+    let params: SendMessageOptions = {
       reply_to_message_id: msg.message_id
     }
 
@@ -254,48 +331,73 @@ bot.onText(
         langName.charAt(0).toUpperCase() + langName.slice(1)
 
       if (msg.reply_to_message) {
+        params = {
+          ...params,
+          reply_to_message_id: msg.reply_to_message!.message_id
+        }
         if (msg.reply_to_message.voice) {
-          console.log(msg)
-          await bot
-            .getFileLink(msg.reply_to_message.voice!.file_id)
-            .then(async (url) => {
-              // TEMPORAL upload to Google Cloud Storage
-              // seriously like for 5 seconds 🙄
-              const path = `audio-files/${String(msg.from!.id)}/${
-                msg.reply_to_message.voice!.file_id
-              }.ogg`
-              uploadObject(url, path).then(() => {
-                bot
-                  .sendMessage(
-                    msg.chat.id,
-                    `Audio uploaded, running transcription`,
-                    {
-                      reply_to_message_id: msg.reply_to_message.message_id
-                    }
+          UserSchema.findOne(
+            { id: msg!.reply_to_message!.from!.id },
+            async (err: any, data: any) => {
+              if (data) {
+                if (data.until > new Date().getDate()) {
+                  console.log(
+                    `data.until (${
+                      data.until
+                    }) > new Date().getDate() ${new Date().getDate()}`
                   )
-                  .then((msgData) => {
-                    waitUntilExists(path).then(() => {
-                      speechToText(path).then((stt_data) => {
-                        bot.editMessageText(
-                          `Audio transcripted, running translation`,
-                          {
-                            chat_id: msgData.chat.id,
-                            message_id: msgData.message_id
-                          }
-                        )
-                        translateText(String(stt_data), lang).then((res) => {
-                          // return bot.sendMessage(msg.chat.id, res, params)
-                          return bot.editMessageText(res, {
-                            chat_id: msgData.chat.id,
-                            message_id: msgData.message_id
+                  await bot
+                    .getFileLink(msg.reply_to_message.voice!.file_id)
+                    .then(async (url) => {
+                      // TEMPORAL upload to Google Cloud Storage
+                      // seriously like for 5 seconds 🙄
+                      const path = `audio-files/${String(msg.from!.id)}/${
+                        msg.reply_to_message.voice!.file_id
+                      }.ogg`
+                      uploadObject(url, path).then(() => {
+                        bot
+                          .sendMessage(
+                            msg.chat.id,
+                            `Audio uploaded, running transcription`,
+                            {
+                              reply_to_message_id: msg.reply_to_message.message_id
+                            }
+                          )
+                          .then((msgData) => {
+                            waitUntilExists(path).then(() => {
+                              speechToText(path).then((stt_data) => {
+                                bot.editMessageText(
+                                  `Audio transcripted, running translation`,
+                                  {
+                                    chat_id: msgData.chat.id,
+                                    message_id: msgData.message_id
+                                  }
+                                )
+                                translateText(String(stt_data), lang).then((res) => {
+                                  // return bot.sendMessage(msg.chat.id, res, params)
+                                  return bot.editMessageText(res, {
+                                    chat_id: msgData.chat.id,
+                                    message_id: msgData.message_id
+                                  })
+                                })
+                                deleteObject(path)
+                              })
+                            })
                           })
-                        })
-                        deleteObject(path)
                       })
                     })
-                  })
-              })
-            })
+                }
+              } else {
+                bot.sendMessage(
+                  msg.chat.id,
+                  `Voice messages translation is available via paid subscription.\nSee /subscribe`,
+                  {
+                    reply_to_message_id: msg.message_id
+                  }
+                )
+              }
+            }
+          )
         } else {
           resp = msg.reply_to_message.text
 

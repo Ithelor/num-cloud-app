@@ -1,5 +1,7 @@
-config
 node_modules
-.prettierrc
 build
+
+config
+
+.prettierrc
 .eslintrc.js

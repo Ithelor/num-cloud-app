@@ -12,7 +12,7 @@ const ChatSchema = new Schema(
     contactedAt: { type: Date, default: Date.now }
   },
   {
-    collection: 'num-eleven-db'
+    collection: 'chats'
   }
 )
 

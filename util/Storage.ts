@@ -2,7 +2,7 @@ require('dotenv').config({
   path: 'config/.env'
 })
 
-import { File, Storage } from '@google-cloud/storage'
+import { Storage } from '@google-cloud/storage'
 import axios from 'axios'
 
 const uploadObject = async (url: string, path: string) => {
