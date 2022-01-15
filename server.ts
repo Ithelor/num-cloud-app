@@ -41,7 +41,10 @@ const bot = new TelegramBot(token!, { polling: true })
 bot.onText(
   /\/tl\s([A-Za-z]+)\s(.+)|\/tl@CloudElevenBot\s([A-Za-z]+)\s(.+)/,
   async (msg: TelegramBot.Message, match: RegExpExecArray | null) => {
-    const params = { reply_to_message_id: msg.message_id }
+    const params: SendMessageOptions = {
+      reply_to_message_id: msg.message_id,
+      parse_mode: 'HTML'
+    }
     let lang = match?.[1] || match?.[3]
     let resp = match?.[2] || match?.[4]
 
@@ -52,7 +55,7 @@ bot.onText(
       if (!data[0] && !data[1]) {
         return bot.sendMessage(
           msg.chat.id,
-          `Language not recognized. Please try again`,
+          `<i>Language not recognized. Please try again...</i>`,
           params
         )
       }
@@ -71,7 +74,8 @@ bot.onText(
   /\/tl ([A-Za-z]+)$|\/tl@CloudElevenBot ([A-Za-z]+)$/,
   async (msg: TelegramBot.Message, match: RegExpExecArray | null) => {
     let params: SendMessageOptions = {
-      reply_to_message_id: msg.message_id
+      reply_to_message_id: msg.message_id,
+      parse_mode: 'HTML'
     }
 
     let resp: string
@@ -84,7 +88,7 @@ bot.onText(
       if (!data[0] && !data[1]) {
         return bot.sendMessage(
           msg.chat.id,
-          `Language not recognized. Please try again`,
+          `<i>Language not recognized. Please try again...</i>`,
           params
         )
       }
@@ -115,19 +119,21 @@ bot.onText(
                         bot
                           .sendMessage(
                             msg.chat.id,
-                            `Audio uploaded, running transcription`,
+                            `🕚 <i>Audio uploaded, running transcription...</i>`,
                             {
-                              reply_to_message_id: msg.reply_to_message!.message_id
+                              reply_to_message_id: msg.reply_to_message!.message_id,
+                              parse_mode: 'HTML'
                             }
                           )
                           .then((msgData) => {
                             waitUntilExists(path).then(() => {
                               speechToText(path).then((stt_data) => {
                                 bot.editMessageText(
-                                  `Audio transcripted, running translation`,
+                                  `🕚 <i>Audio transcripted, running translation...</i>`,
                                   {
                                     chat_id: msgData.chat.id,
-                                    message_id: msgData.message_id
+                                    message_id: msgData.message_id,
+                                    parse_mode: 'HTML'
                                   }
                                 )
                                 translateText(String(stt_data), lang).then((res) => {
@@ -145,18 +151,20 @@ bot.onText(
                 } else {
                   bot.sendMessage(
                     msg.chat.id,
-                    `Your subscription has expired.\nIf you consider renewing it, see /subscribe`,
+                    `<i>Your subscription has expired.</i>\nIf you consider renewing it, see /subscribe`,
                     {
-                      reply_to_message_id: msg.message_id
+                      reply_to_message_id: msg.message_id,
+                      parse_mode: 'HTML'
                     }
                   )
                 }
               } else {
                 bot.sendMessage(
                   msg.chat.id,
-                  `Voice messages translation is available via paid subscription.\nSee /subscribe`,
+                  `<i>Voice messages translation is available via paid subscription.</i>\nSee /subscribe`,
                   {
-                    reply_to_message_id: msg.message_id
+                    reply_to_message_id: msg.message_id,
+                    parse_mode: 'HTML'
                   }
                 )
               }
@@ -172,7 +180,7 @@ bot.onText(
       } else {
         bot.sendMessage(
           msg.chat.id,
-          `Please specify text or reply to a message`,
+          `<i>Please specify text or reply to a message</i>`,
           params
         )
       }
@@ -239,12 +247,13 @@ bot.on('callback_query', (callbackQuery) => {
                 bot.editMessageText(
                   `@${
                     msg!.reply_to_message!.from!.username
-                  } subscribed succesfully. Expiration date - ${
+                  } subscribed succesfully.\nExpiration date - <i>${
                     newExpires ?? expires
-                  }`,
+                  }</i>`,
                   {
                     chat_id: msg!.chat.id,
-                    message_id: msg!.message_id
+                    message_id: msg!.message_id,
+                    parse_mode: 'HTML'
                   }
                 )
               }
@@ -336,13 +345,14 @@ bot.on('inline_query', async (msg: TelegramBot.InlineQuery) => {
 
 // Incorrect /tl
 bot.onText(/\/tl$|\/tl@CloudElevenBot$/, async (msg: TelegramBot.Message) => {
-  const params = {
-    reply_to_message_id: msg.message_id
+  const params: SendMessageOptions = {
+    reply_to_message_id: msg.message_id,
+    parse_mode: 'HTML'
   }
 
   bot.sendMessage(
     msg.chat.id,
-    `Incorrect query.\nPlease either follow "language text" syntax or reply to a message with language specified`,
+    `<i>Incorrect query.\nPlease either follow "language text" syntax or reply to a message with language specified</i>`,
     params
   )
 })
